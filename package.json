@@ -1,0 +1,62 @@
+{
+  "name": "growth-buddy-llm",
+  "version": "0.2.0",
+  "description": "Growth Buddy LLM — 不依赖 n8n 的本地 AI 成长伙伴",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/coco-growth-buddy.git"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/coco-growth-buddy#readme",
+  "author": "Coco Growth Buddy Contributors",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.coco.growth-buddy-llm",
+    "productName": "Coco Growth Buddy",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "system-message-core-principles.md",
+      "db.js",
+      "config.example.json",
+      "package.json",
+      "node_modules/**/*",
+      "users/**/*"
+    ],
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.education",
+      "hardenedRuntime": true,
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Education"
+    },
+    "win": {
+      "target": ["portable"],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    }
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "openai": "^4.93.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^25.1.8"
+  }
+}

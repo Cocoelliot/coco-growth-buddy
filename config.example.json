@@ -1,0 +1,11 @@
+{
+  "app": {
+    "owner_user_id": "your-name",
+    "user_name": "你的显示名称",
+    "coco_docs_root": "./workspace"
+  },
+  "llm": {
+    "api_key": "sk-or-v1-你的-OpenRouter-API-Key",
+    "default_model": "deepseek/deepseek-v4-flash"
+  }
+}
