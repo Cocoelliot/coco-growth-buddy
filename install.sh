@@ -49,6 +49,9 @@ read -p "  OpenRouter API Key: " API_KEY
 DEFAULT_MODEL="deepseek/deepseek-v4-flash"
 read -p "  默认模型 [$DEFAULT_MODEL]: " MODEL
 MODEL="${MODEL:-$DEFAULT_MODEL}"
+DEFAULT_VISION="xiaomi/mimo-v2.5"
+read -p "  图像识别模型 [$DEFAULT_VISION]: " VISION_MODEL
+VISION_MODEL="${VISION_MODEL:-$DEFAULT_VISION}"
 
 # --- 3. 创建用户数据目录 ---
 mkdir -p "users/${OWNER_ID}/quick_notes"
@@ -67,7 +70,8 @@ cat > config.json <<EOF
   },
   "llm": {
     "api_key": "${API_KEY}",
-    "default_model": "${MODEL}"
+    "default_model": "${MODEL}",
+    "vision_model": "${VISION_MODEL}"
   }
 }
 EOF

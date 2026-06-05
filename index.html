@@ -184,12 +184,16 @@
     #chatInputShell:focus-within { border-color: var(--brand-primary); box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1); }
     #userInput { width: 100%; box-sizing: border-box; background: transparent; border: none; border-radius: 8px; padding: 6px 6px 4px; height: var(--chatInputMinH); max-height: var(--chatInputMaxH); overflow-y: hidden; resize: none; font-family: inherit; font-size: 14px; line-height: 20px; color: var(--text-primary); outline: none; }
     #userInput::placeholder { color: var(--text-muted); opacity: 0.6; }
-    #input-controls { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border-warm); display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    #input-controls { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border-warm); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .icon-btn { width: 32px; min-width: 32px; height: 32px; padding: 0; text-align: center; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; user-select: none; line-height: 1; font-size: 13px; cursor: pointer; border: 1px solid var(--border-light); background: var(--bg-white); color: var(--text-secondary); transition: all 0.15s; }
     .icon-btn:hover { background: var(--bg-sand); border-color: var(--border-warm); }
     .send { background: var(--brand-primary) !important; border-color: var(--brand-primary) !important; color: white !important; font-weight: 600; }
     .send:hover { background: #d97706 !important; border-color: #d97706 !important; }
-    .input-hint { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: right; }
+    .input-hint { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: left; display: flex; }
+    #image-preview { position: relative; display: inline-block; margin-bottom: 6px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-warm); max-width: 200px; }
+    #image-preview img { display: block; max-width: 200px; max-height: 120px; object-fit: contain; }
+    #remove-image { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; background: rgba(0,0,0,0.5); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1; }
+    #remove-image:hover { background: rgba(0,0,0,0.7); }
 
     #visual-panel { grid-column: 5; grid-row: 2; background: var(--bg-white); border-left: none; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
     #visual-header { padding: 12px; border-bottom: 1px solid var(--border-soft); font-size: 11px; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; }
@@ -236,14 +240,20 @@
     </div>
     <div id="chat-input-area">
       <div class="input-wrapper">
+        <div id="image-preview" style="display:none;">
+          <img id="preview-img" src="" />
+          <span id="remove-image" title="移除图片">×</span>
+        </div>
         <div id="chatInputShell">
           <textarea id="userInput" placeholder="输入你想说的... (Cmd/Ctrl+Enter 发送)"></textarea>
           <div id="input-controls">
+            <button class="icon-btn" id="attachBtn" title="上传图片（OCR/问答）">📎</button>
             <button class="icon-btn send" id="sendBtn" title="发送 (Cmd/Ctrl+Enter)">➤</button>
           </div>
         </div>
-        <div class="input-hint">Cmd/Ctrl + Enter 发送</div>
+        <div class="input-hint">点击上传图片，Cmd/Ctrl + Enter 发送</div>
       </div>
+      <input type="file" id="imageInput" accept="image/*" style="display:none;" />
     </div>
   </main>
   <div id="resizer-right" class="resizer"></div>
@@ -267,6 +277,8 @@
     var USER_NAME_LOWER = 'default';
     var _gbApiKey = '';
     var _gbModel = 'deepseek/deepseek-v4-flash';
+    var _gbVisionModel = 'xiaomi/mimo-v2.5';
+    let attachedImage = null; // { base64, mimeType, fileName }
     const path = require('path');
     const os = require('os');
     const fs = require('fs');
@@ -755,6 +767,14 @@ let pendingFileOps = [];
 
       sendBtn.addEventListener('click', sendMessage);
 
+      // Image attach
+      var attachBtn = document.getElementById('attachBtn');
+      var imageInput = document.getElementById('imageInput');
+      var removeImage = document.getElementById('remove-image');
+      attachBtn.addEventListener('click', function() { imageInput.click(); });
+      imageInput.addEventListener('change', handleImageSelected);
+      removeImage.addEventListener('click', clearAttachedImage);
+
       document.getElementById('notePathLabel').addEventListener('click', toggleNotePreview);
       document.getElementById('note-preview-close').addEventListener('click', hideNotePreview);
 
@@ -1123,6 +1143,7 @@ function pad2(n) {
             if (cfg['app.owner_user_id']) USER_NAME_LOWER = cfg['app.owner_user_id'];
             if (cfg['llm.api_key']) _gbApiKey = cfg['llm.api_key'];
             if (cfg['llm.default_model']) _gbModel = cfg['llm.default_model'];
+            if (cfg['llm.vision_model']) _gbVisionModel = cfg['llm.vision_model'];
           }
         }
       } catch(e) {
@@ -1238,8 +1259,86 @@ function pad2(n) {
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
+    // === Image / Vision ===
+    function handleImageSelected(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var base64 = ev.target.result.split(',')[1];
+        attachedImage = { base64: base64, mimeType: file.type, fileName: file.name };
+        var preview = document.getElementById('image-preview');
+        var img = document.getElementById('preview-img');
+        img.src = ev.target.result;
+        preview.style.display = 'inline-block';
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
+    function clearAttachedImage() {
+      attachedImage = null;
+      var preview = document.getElementById('image-preview');
+      preview.style.display = 'none';
+      var img = document.getElementById('preview-img');
+      img.src = '';
+    }
+
+    async function visionChat(imageBase64, mimeType, prompt) {
+      var resp = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (_gbApiKey || ''),
+        },
+        body: JSON.stringify({
+          model: _gbVisionModel,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt || '请详细描述这张图片的内容，包括其中出现的所有文字。' },
+              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + imageBase64 } }
+            ]
+          }],
+        }),
+      });
+      var data = await resp.json();
+      if (data.error) throw new Error('Vision API: ' + (data.error.message || JSON.stringify(data.error)));
+      return data.choices?.[0]?.message?.content || '';
+    }
+
     async function sendMessage() {
       var text = userInput.value.trim();
+      if (!text && !attachedImage) return;
+
+      // Image handling: call vision model first
+      if (attachedImage) {
+        var visionLoading = document.createElement('div');
+        visionLoading.className = 'msg user';
+        visionLoading.id = 'vision-loading-' + Date.now();
+        visionLoading.innerHTML = '<div class="tag">User</div><div class="markdown-body"><p><em>🔍 识别图片中...</em></p></div>';
+        chatMessages.appendChild(visionLoading);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+          var visionResult = await visionChat(attachedImage.base64, attachedImage.mimeType, text || undefined);
+          var vEl = document.getElementById(visionLoading.id);
+          if (vEl) vEl.remove();
+          if (text) {
+            text = '【图片识别结果】\n' + visionResult + '\n\n【用户问题】\n' + text;
+          } else {
+            text = '【图片识别结果】\n' + visionResult;
+          }
+        } catch (e) {
+          var vEl = document.getElementById(visionLoading.id);
+          if (vEl) vEl.remove();
+          appendMessage('buddy', '图片识别失败: ' + (e.message || '未知错误'));
+          clearAttachedImage();
+          return;
+        }
+        clearAttachedImage();
+      }
+
       if (!text) return;
 
       appendMessage('user', text);
@@ -1332,9 +1431,9 @@ function pad2(n) {
                   var dd = String(d.getDate()).padStart(2, '0');
                   var hh = String(d.getHours()).padStart(2, '0');
                   var mi = String(d.getMinutes()).padStart(2, '0');
-                  ts = '[' + mm + '/' + dd + ' ' + hh + ':' + mi + '] ';
+                  ts = '[context: ' + mm + '/' + dd + ' ' + hh + ':' + mi + ']\n';
                 }
-                return { role: m.role, content: (m.role === 'assistant' ? 'coco: ' : '') + ts + m.content };
+                return { role: m.role, content: ts + m.content };
               }),
               { role: 'user', content: text }
             ];
@@ -1360,6 +1459,8 @@ function pad2(n) {
 
         var reply = res;
         if (reply) {
+          // 去掉 LLM 模仿输出的时间戳/元数据前缀
+          reply = reply.replace(/^\[(?:context:\s*)?\d{2}\/\d{2}\s+\d{2}:\d{2}\]\s*/, '');
           conversationHistory.push({ role: 'user', content: text });
           var cleanedReply = await processStructuredOutputTags(reply);
           conversationHistory.push({ role: 'assistant', content: cleanedReply || reply });

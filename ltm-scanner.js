@@ -223,13 +223,21 @@ function parseAndSaveLtm(llmContent, ownerUserId, targetRound) {
 
   if (items.length > 0) {
     console.log(`[${ownerUserId}] LLM extracted ${items.length} items:`);
+    var parkedCount = 0;
     for (const item of items) {
-      console.log(`  - [${item.type}] ${item.title} (${item.status || 'active'})`);
       try {
         db.ltmSave({ ...item, owner_user_id: ownerUserId, source_round: targetRound });
+        if (item.status === 'parked') {
+          parkedCount++;
+        } else {
+          console.log(`  - [${item.type}] ${item.title}`);
+        }
       } catch (e) {
         console.error(`[${ownerUserId}] Failed to save LTM item "${item.title}":`, e.message);
       }
+    }
+    if (parkedCount > 0) {
+      console.log(`  (${parkedCount} old versions archived)`);
     }
   } else {
     console.log(`[${ownerUserId}] LLM found nothing worth saving this round`);

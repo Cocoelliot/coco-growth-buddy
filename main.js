@@ -344,7 +344,8 @@ ipcMain.handle('coco:readText', async (_evt, { path: relPath }) => {
 // LTM Export — 启动时导出当前 LTM Preload 为 Markdown 文件（供用户查看 + 备份）
 // ---------------------------------------------------------------------------
 
-/** 导出当前 LTM Preload 到 user/ltm_export/ltm-preload-{timestamp}.md */
+/** 导出当前 LTM Preload 到 user/ltm_export/ltm-preload-{timestamp}.md
+ *  仅内容有变化时才写入，避免重复。 */
 function exportLtmPreload() {
   try {
     const uid = (appConfig && appConfig.app && appConfig.app.owner_user_id) || 'default';
@@ -389,14 +390,33 @@ function exportLtmPreload() {
       }
     }
 
+    // 与最近一次导出做版本比对：内容无变化则跳过
     const absDir = path.join(APP_DIR, 'users', uid, 'ltm_exports');
+    const bodyForCompare = md.replace(/^\*\*Exported at\*\*: .+\n/m, '');
+    let skip = false;
+    try {
+      const files = fs.readdirSync(absDir)
+        .filter(f => f.startsWith('ltm-preload-') && f.endsWith('.md'))
+        .sort()
+        .reverse();
+      if (files.length > 0) {
+        const latest = fs.readFileSync(path.join(absDir, files[0]), 'utf8');
+        const latestBody = latest.replace(/^\*\*Exported at\*\*: .+\n/m, '');
+        if (bodyForCompare === latestBody) skip = true;
+      }
+    } catch (_) { /* 目录不存在或无法读取，跳过比较，照常写入 */ }
+
+    if (skip) {
+      console.log(`LTM preload: no changes since last export, skipping.`);
+      return;
+    }
+
     const fileName = `ltm-preload-${ts}.md`;
     const absPath = path.join(absDir, fileName);
 
     fs.mkdirSync(absDir, { recursive: true });
     fs.writeFileSync(absPath, md, 'utf8');
 
-    // 也写个快捷日志方便找
     console.log(`LTM preload exported: ltm_exports/${fileName} (${records.length} records, full path: ${absPath})`);
   } catch (e) {
     console.warn('LTM export failed:', e.message);

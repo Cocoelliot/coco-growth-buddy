@@ -1,6 +1,8 @@
 # Coco Growth Buddy (LLM Edition)
 
-本地 Electron 桌面 AI 学习伴侣。直连 OpenRouter API，支持多用户切换，侧栏进度追踪，可视化面板，Quick Notes，以及 SQLite 长期记忆（LTM）系统。
+本地 Electron 桌面 AI 学习伴侣。直连 OpenRouter API，支持多用户切换，侧栏进度追踪，可视化面板，Quick Notes，以及 SQLite 长期记忆（LTM, Long-Term Memory）系统。
+
+![主界面](screenshots/main.png)
 
 ## 快速开始
 
@@ -20,14 +22,14 @@ npm start
 {install_dir}/
 ├── index.html                           ← 前端 UI（含 LTM 工具调用）
 ├── main.js                              ← Electron 主进程 + IPC handlers
-├── preload.js                           ← IPC 安全桥接
+├── preload.js                           ← IPC API 桥接（window.api）
 ├── db.js                                ← SQLite 数据层（LTM + chat + config）
 ├── ltm-scanner.js                       ← 后台 LTM 异步扫描进程
 ├── package.json
 ├── config.example.json                  ← 配置文件模板
 ├── system-message-core-principles.md    ← 主 Agent 系统消息
 ├── system-message-ltm-scanner.md        ← Scanner Agent 系统消息
-├── install.sh                           ← 安装/配置脚本
+├── install.sh                           ← 安装/配置脚本（可选，也可首次 npm start 后弹窗配置）
 ├── LICENSE
 ├── README.md
 ├── data/                                ← SQLite 数据库（自动生成）
@@ -44,30 +46,9 @@ npm start
 
 ## config.json
 
-首次启动时会自动弹出配置向导。你也可以手动复制 `config.example.json` 为 `config.json` 并填写：
+首次启动时会自动弹出配置向导。也可以运行 `bash install.sh` 交互式配置。
 
-```bash
-cp config.example.json config.json
-```
-
-```json
-{
-  "app": {
-    "owner_user_id": "your_user_name",
-    "user_name": "显示名称",
-    "coco_docs_root": "./workspace"
-  },
-  "llm": {
-    "api_key": "sk-or-v1-...",
-    "default_model": "deepseek/deepseek-v4-flash"
-  },
-  "ltm": {
-    "scan_interval_rounds": 20
-  }
-}
-```
-
-`config.json` 已加入 `.gitignore`，不会被提交到版本管理。
+完整配置项参考 `config.example.json`。
 
 | 字段 | 说明 |
 |------|------|
@@ -76,7 +57,18 @@ cp config.example.json config.json
 | `app.coco_docs_root` | 工作目录（默认 `./workspace`） |
 | `llm.api_key` | OpenRouter API Key |
 | `llm.default_model` | 默认模型 ID |
+| `llm.vision_model` | 图像识别模型 ID（默认 `xiaomi/mimo-v2.5`） |
 | `ltm.scan_interval_rounds` | LTM Scanner 扫描间隔轮数（默认 20） |
+
+## 图片识别
+
+点击输入框下方 📎 按钮上传图片，自动调用多模态模型识别图中文字和内容，识别结果拼入对话上下文。
+
+- 可只发图片，也可附带文字提问
+- 识别完成后可继续用默认模型追问
+- 识别结果完整保存到聊天记录
+
+支持格式：PNG、JPG、GIF、WebP 等常见图片格式。
 
 ## 长期记忆（LTM）系统
 
