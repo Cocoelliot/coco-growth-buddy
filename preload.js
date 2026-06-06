@@ -18,4 +18,6 @@ window.api = {
   ping: () => ipcRenderer.invoke('coco:ping'),
   // First-run setup: save config.json from dialog (dmg users)
   initSaveConfig: (config) => ipcRenderer.invoke('init:save-config', config),
+  getDataRoot: () => ipcRenderer.invoke('app:get-data-root'),
+  configWriteFile: () => ipcRenderer.invoke('config:write-file'),
 };

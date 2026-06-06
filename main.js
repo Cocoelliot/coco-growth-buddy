@@ -1,6 +1,6 @@
 /* Coco Desktop (Electron) - main process */
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
@@ -18,9 +18,9 @@ let ltmScannerProcess = null;
 // loadAppConfig() must be called before any fs operations use this
 function getCocoDocsRoot() {
   if (appConfig && appConfig.app && appConfig.app.coco_docs_root) {
-    return path.resolve(APP_DIR, appConfig.app.coco_docs_root);
+    return path.resolve(DATA_ROOT, appConfig.app.coco_docs_root);
   }
-  return path.join(APP_DIR, 'workspace');
+  return path.join(DATA_ROOT, 'workspace');
 }
 let COCO_DOCS_ROOT = null;
 // Will be set after loadAppConfig() in createWindow()
@@ -28,12 +28,21 @@ let COCO_DOCS_ROOT = null;
 
 // === Growth Buddy LLM Config & DB ===
 const APP_DIR = __dirname;
+// DATA_ROOT: packaged → ~/Documents/Coco Growth Buddy; dev → same as APP_DIR
+function getDataRoot() {
+  if (app.isPackaged) {
+    return path.join(os.homedir(), 'Documents', 'Coco Growth Buddy');
+  }
+  return APP_DIR;
+}
+let DATA_ROOT = null;
 let appConfig = {};
 let appDB = null;
 
 function loadAppConfig() {
   try {
-    const configPath = path.join(APP_DIR, 'config.json');
+    const dir = DATA_ROOT || APP_DIR;
+    const configPath = path.join(dir, 'config.json');
     if (fs.existsSync(configPath)) {
       appConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     }
@@ -46,7 +55,7 @@ function initAppDB() {
   if (appDB) return;
   loadAppConfig();
   const dataDir = appConfig.app?.data_dir || './data';
-  const absDataDir = path.resolve(APP_DIR, dataDir);
+  const absDataDir = path.resolve(DATA_ROOT, dataDir);
   appDB = new AppDB(absDataDir, appConfig);
   console.log('Growth Buddy DB initialized at', path.join(absDataDir, 'growth-buddy.db'));
 }
@@ -106,6 +115,12 @@ function createWindow() {
     }
   });
 
+  // DATA_ROOT must be set before initAppDB() and COCO_DOCS_ROOT
+  if (!DATA_ROOT) {
+    DATA_ROOT = getDataRoot();
+    console.log('DATA_ROOT set to:', DATA_ROOT);
+  }
+
   initAppDB();
 
   // 初始化 COCO_DOCS_ROOT（需在 loadAppConfig() 之后）
@@ -121,6 +136,30 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // macOS menu bar
+  if (process.platform === 'darwin') {
+    const menu = Menu.buildFromTemplate([{
+      label: app.name,
+      submenu: [
+        { label: '偏好设置...', accelerator: 'Cmd+,', click: () => { mainWindow.webContents.send('menu:open-settings'); } },
+        { type: 'separator' },
+        { role: 'quit', label: '退出 ' + app.name }
+      ]
+    }, {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' }
+      ]
+    }]);
+    Menu.setApplicationMenu(menu);
+  }
+
   createWindow();
 
   // 启动后台 LTM Scanner（使用 Electron 内置 Node，确保 native 模块版本匹配）
@@ -271,6 +310,26 @@ ipcMain.handle('config:get-all', async () => {
   return appDB.configGetAll();
 });
 
+ipcMain.handle('config:write-file', async () => {
+  if (!appDB) initAppDB();
+  const cfg = appDB.configGetAll();
+  const dir = DATA_ROOT || APP_DIR;
+  const configPath = path.join(dir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    app: {
+      owner_user_id: cfg['app.owner_user_id'] || 'default',
+      user_name: cfg['app.user_name'] || 'Learner',
+      coco_docs_root: './workspace'
+    },
+    llm: {
+      api_key: cfg['llm.api_key'] || '',
+      default_model: cfg['llm.default_model'] || 'deepseek/deepseek-v4-flash',
+      vision_model: cfg['llm.vision_model'] || 'xiaomi/mimo-v2.5'
+    }
+  }, null, 2), 'utf8');
+  return { ok: true };
+});
+
 // --- State ---
 
 ipcMain.handle('state:get', async (_evt, key) => {
@@ -288,9 +347,14 @@ ipcMain.handle('coco:ping', async () => {
   return { ok: true, cocoDocsDir: COCO_DOCS_ROOT };
 });
 
+ipcMain.handle('app:get-data-root', async () => {
+  return { dataRoot: DATA_ROOT };
+});
+
 // --- Initial config save (for first-run setup via dmg) ---
 ipcMain.handle('init:save-config', async (_evt, config) => {
-  const configPath = path.join(APP_DIR, 'config.json');
+  const dir = DATA_ROOT || APP_DIR;
+  const configPath = path.join(dir, 'config.json');
   const newConfig = {
     app: {
       owner_user_id: (config.owner_user_id || 'default').toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
@@ -299,7 +363,8 @@ ipcMain.handle('init:save-config', async (_evt, config) => {
     },
     llm: {
       api_key: config.api_key || '',
-      default_model: config.default_model || 'deepseek/deepseek-v4-flash'
+      default_model: config.default_model || 'deepseek/deepseek-v4-flash',
+      vision_model: config.vision_model || 'xiaomi/mimo-v2.5'
     }
   };
   fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2), 'utf8');
@@ -391,7 +456,7 @@ function exportLtmPreload() {
     }
 
     // 与最近一次导出做版本比对：内容无变化则跳过
-    const absDir = path.join(APP_DIR, 'users', uid, 'ltm_exports');
+    const absDir = path.join(DATA_ROOT, 'users', uid, 'ltm_exports');
     const bodyForCompare = md.replace(/^\*\*Exported at\*\*: .+\n/m, '');
     let skip = false;
     try {

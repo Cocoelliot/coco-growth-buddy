@@ -5,15 +5,16 @@
   "main": "main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/coco-growth-buddy.git"
+    "url": "https://github.com/Cocoelliot/coco-growth-buddy.git"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/coco-growth-buddy#readme",
-  "author": "Coco Growth Buddy Contributors",
+  "homepage": "https://github.com/Cocoelliot/coco-growth-buddy#readme",
+  "author": "Coco, Coddy, and Elliot",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.coco.growth-buddy-llm",
@@ -25,28 +26,34 @@
       "main.js",
       "preload.js",
       "index.html",
+      "ltm-scanner.js",
       "system-message-core-principles.md",
+      "system-message-ltm-scanner.md",
       "db.js",
       "config.example.json",
-      "package.json",
-      "node_modules/**/*",
-      "users/**/*"
+      "package.json"
     ],
+    "afterPack": "./scripts/afterPack.js",
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        { "target": "dmg", "arch": ["arm64"] }
       ],
       "category": "public.app-category.education",
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
+      "identity": null,
+      "asar": false,
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Education"
     },
     "win": {
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "artifactName": "${productName}-${version}-win-${arch}.${ext}"
     }
   },
@@ -57,6 +64,6 @@
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
     "electron": "^28.3.3",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^26.8.1"
   }
 }

@@ -48,7 +48,7 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     }
 
-    #title-bar { grid-column: 1 / 6; grid-row: 1; height: var(--titleBarHeight); background: var(--bg-white); border-bottom: 1px solid var(--border-light); -webkit-app-region: drag; }
+    #title-bar { grid-column: 1 / 6; grid-row: 1; height: var(--titleBarHeight); background: var(--bg-white); border-bottom: 1px solid var(--border-light); -webkit-app-region: drag; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; }
     .resizer { grid-row: 2; width: var(--resizer); cursor: col-resize; background: transparent; position: relative; z-index: 10; }
     .resizer:hover { background: var(--border-light); }
     .resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: calc(50% - 1px); width: 1px; background: var(--border-warm); }
@@ -219,7 +219,7 @@
   </style>
 </head>
 <body>
-  <div id="title-bar"></div>
+  <div id="title-bar"><button id="settingsBtn" title="设置" onclick="openSettingsDialog()" style="background:transparent;border:none;color:#9ca3af;font-size:16px;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1;-webkit-app-region:no-drag;" onmouseenter="this.style.color='#6b7280';this.style.background='#f3f4f6'" onmouseleave="this.style.color='#9ca3af';this.style.background='transparent'">⋯</button></div>
   <aside id="left-panel">
     <div id="sidebar-header"><div class="sidebar-title"><span class="bear">🐻</span><span>Coco Growth Buddy</span></div></div>
     <div class="gb-card"><div class="gb-card-title">正在探索</div><div class="gb-card-content" id="current-topic">准备开始</div></div>
@@ -283,7 +283,16 @@
     const os = require('os');
     const fs = require('fs');
     const INSTALL_DIR = __dirname;
-    function getUserDataDir() { return path.join(INSTALL_DIR, 'users', USER_NAME_LOWER); }
+    var _gbDataRoot = INSTALL_DIR; // packaged: ~/Documents/Coco Growth Buddy
+    async function initDataRoot() {
+      if (window.api) {
+        try {
+          var result = await window.api.getDataRoot();
+          if (result && result.dataRoot) _gbDataRoot = result.dataRoot;
+        } catch (e) {}
+      }
+    }
+    function getUserDataDir() { return path.join(_gbDataRoot, 'users', USER_NAME_LOWER); }
 
     const DEFAULT_USER = USER_NAME_LOWER;
 
@@ -762,6 +771,12 @@ let pendingFileOps = [];
     // Init
     // ==========================================
     document.addEventListener('DOMContentLoaded', function() {
+      // Listen for menu bar "Preferences" trigger
+      try {
+        var { ipcRenderer } = require('electron');
+        ipcRenderer.on('menu:open-settings', function() { openSettingsDialog(); });
+      } catch(e) {}
+
       initResizers();
       initInputAutosize();
 
@@ -796,7 +811,7 @@ let pendingFileOps = [];
         loadLtmPreload();
         loadChatHistory();
 
-        if (!_gbApiKey || !fs.existsSync(path.join(INSTALL_DIR, 'config.json'))) {
+        if (!_gbApiKey || !fs.existsSync(path.join(_gbDataRoot, 'config.json'))) {
           setTimeout(function() { showSetupDialog(); }, 800);
         }
       }).catch(function(e) {
@@ -1136,6 +1151,7 @@ function pad2(n) {
     // ==========================================
     async function initConfig() {
       try {
+        await initDataRoot();
         if (window.api) {
           var cfg = await window.api.configGetAll();
           if (cfg) {
@@ -1167,12 +1183,14 @@ function pad2(n) {
         '<input id="setup-name" placeholder="如 小雨" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
         '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">OpenRouter API Key</label>' +
         '<input id="setup-apikey" type="password" placeholder="sk-or-v1-..." style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
-        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">默认模型（可选）</label>' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">默认模型</label>' +
         '<input id="setup-model" value="deepseek/deepseek-v4-flash" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:6px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
-        '<div style="font-size:11px;color:#9ca3af;margin-bottom:16px;">默认为 deepseek/deepseek-v4-flash，可在设置中修改</div>' +
+        '<div style="font-size:11px;color:#9ca3af;margin-bottom:16px;">默认为 deepseek/deepseek-v4-flash，可在设置中更改</div>' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">多模态模型（可选，用于图片识别）</label>' +
+        '<input id="setup-vision" value="xiaomi/mimo-v2.5" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
         '<button id="setup-save-btn" style="width:100%;padding:10px;border-radius:8px;background:#f59e0b;color:white;border:none;font-size:14px;font-weight:600;cursor:pointer;">保存并开始</button>' +
         '<div id="setup-error" style="display:none;margin-top:10px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:12px;text-align:center;"></div>' +
-        '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f3f4f6;font-size:11px;color:#9ca3af;text-align:center;">已有账号？关闭此窗口后点击右下角 ⚙️ 图标修改配置</div>' +
+        '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f3f4f6;font-size:11px;color:#9ca3af;text-align:center;">已有账号？关闭此窗口后点击右上角 ⋯ 修改配置</div>' +
         '</div>';
 
       document.body.appendChild(overlay);
@@ -1182,6 +1200,7 @@ function pad2(n) {
         var name = document.getElementById('setup-name').value.trim();
         var key = document.getElementById('setup-apikey').value.trim();
         var model = document.getElementById('setup-model').value.trim() || 'deepseek/deepseek-v4-flash';
+        var vision = document.getElementById('setup-vision').value.trim() || 'xiaomi/mimo-v2.5';
         var errEl = document.getElementById('setup-error');
 
         if (!uid) { errEl.textContent = '请输入用户标识'; errEl.style.display = 'block'; return; }
@@ -1198,7 +1217,8 @@ function pad2(n) {
               owner_user_id: uid,
               user_name: name,
               api_key: key,
-              default_model: model
+              default_model: model,
+              vision_model: vision
             });
           }
 
@@ -1219,7 +1239,92 @@ function pad2(n) {
       });
     }
 
-    /*
+    function openSettingsDialog() {
+      if (document.getElementById('settings-overlay')) return;
+      var overlay = document.createElement('div');
+      overlay.id = 'settings-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;';
+
+      overlay.innerHTML = '<div style="background:white;border-radius:16px;padding:28px;max-width:400px;width:90vw;box-shadow:0 16px 48px rgba(0,0,0,0.2);text-align:left;">' +
+        '<div style="text-align:center;font-size:13px;font-weight:600;margin-bottom:20px;color:#1f2937;">设置</div>' +
+        '<div style="display:flex;gap:10px;margin-bottom:14px;">' +
+        '<div style="flex:1;">' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">账号（不可修改）</label>' +
+        '<input value="' + USER_NAME_LOWER + '" disabled style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;background:#f9fafb;color:#9ca3af;box-sizing:border-box;">' +
+        '</div>' +
+        '<div style="flex:1;">' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">昵称</label>' +
+        '<input id="settings-name" value="' + USER_NAME + '" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
+        '</div>' +
+        '</div>' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">OpenRouter API Key</label>' +
+        '<input id="settings-apikey" type="password" value="' + _gbApiKey + '" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">默认模型</label>' +
+        '<input id="settings-model" value="' + _gbModel + '" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
+        '<label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">多模态模型</label>' +
+        '<input id="settings-vision" value="' + _gbVisionModel + '" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:16px;box-sizing:border-box;outline:none;" onfocus="this.style.borderColor=\'#f59e0b\'" onblur="this.style.borderColor=\'#e5e7eb\'">' +
+        '<button id="settings-save-btn" style="width:100%;padding:10px;border-radius:8px;background:#f59e0b;color:white;border:none;font-size:14px;font-weight:600;cursor:pointer;">保存</button>' +
+        '<div id="settings-error" style="display:none;margin-top:10px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:12px;text-align:center;"></div>' +
+        '<div id="settings-ok" style="display:none;margin-top:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#16a34a;font-size:12px;text-align:center;">已保存</div>' +
+        '</div>';
+
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) { overlay.remove(); } });
+      document.body.appendChild(overlay);
+
+      document.getElementById('settings-save-btn').onclick = async function() {
+        var name = document.getElementById('settings-name').value.trim();
+        var key = document.getElementById('settings-apikey').value.trim();
+        var model = document.getElementById('settings-model').value.trim() || 'deepseek/deepseek-v4-flash';
+        var vision = document.getElementById('settings-vision').value.trim() || 'xiaomi/mimo-v2.5';
+        var errEl = document.getElementById('settings-error');
+        var okEl = document.getElementById('settings-ok');
+        errEl.style.display = 'none';
+        okEl.style.display = 'none';
+
+        if (!name) { errEl.textContent = '昵称不能为空'; errEl.style.display = 'block'; return; }
+        if (!key) { errEl.textContent = '请输入 API Key'; errEl.style.display = 'block'; return; }
+
+        try {
+          var btn = document.getElementById('settings-save-btn');
+          btn.textContent = '保存中...';
+          btn.disabled = true;
+
+          if (window.api) {
+            await window.api.configSet({ key: 'app.user_name', value: name });
+            await window.api.configSet({ key: 'llm.api_key', value: key });
+            await window.api.configSet({ key: 'llm.default_model', value: model });
+            await window.api.configSet({ key: 'llm.vision_model', value: vision });
+            await window.api.configWriteFile();
+          }
+
+          // Update in-memory globals
+          USER_NAME = name;
+          _gbApiKey = key;
+          _gbModel = model;
+          _gbVisionModel = vision;
+
+          // Update sidebar display name
+          var welcomeEl = document.getElementById('welcome-content');
+          if (welcomeEl) {
+            var p = welcomeEl.querySelector('p');
+            if (p) p.innerHTML = p.innerHTML.replace(/嗨 [^！]+/, '嗨 ' + name);
+          }
+
+          okEl.style.display = 'block';
+          setTimeout(function() { overlay.remove(); }, 800);
+        } catch (e) {
+          errEl.textContent = '保存失败: ' + (e.message || '未知错误');
+          errEl.style.display = 'block';
+          btn.textContent = '保存';
+          btn.disabled = false;
+        }
+      };
+
+      overlay.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') document.getElementById('settings-save-btn').click();
+        if (e.key === 'Escape') overlay.remove();
+      });
+    }    /*
      * appendMessage(role, content, isReplay)
      * isReplay = true 时，表示是历史消息重绘，不触发视觉面板自动存盘
      */

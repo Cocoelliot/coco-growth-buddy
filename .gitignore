@@ -20,5 +20,8 @@ dev_notes.md
 DEVELOPMENT.md
 release.sh
 
+# 构建产物
+dist/
+
 # WorkBuddy 内部数据
 .workbuddy/
