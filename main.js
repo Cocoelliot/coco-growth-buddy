@@ -4,7 +4,6 @@ const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
-const os = require('os');
 const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 const { AppDB } = require('./db');
@@ -28,10 +27,10 @@ let COCO_DOCS_ROOT = null;
 
 // === Growth Buddy LLM Config & DB ===
 const APP_DIR = __dirname;
-// DATA_ROOT: packaged → ~/Documents/Coco Growth Buddy; dev → same as APP_DIR
+// DATA_ROOT: packaged → platform Documents/Coco Growth Buddy; dev → same as APP_DIR
 function getDataRoot() {
   if (app.isPackaged) {
-    return path.join(os.homedir(), 'Documents', 'Coco Growth Buddy');
+    return path.join(app.getPath('documents'), 'Coco Growth Buddy');
   }
   return APP_DIR;
 }

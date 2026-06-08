@@ -11,7 +11,7 @@
   "author": "Coco, Coddy, and Elliot",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
+    "start": "ELECTRON_RUN_AS_NODE= electron .",
     "build": "electron-builder",
     "pack": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps"
@@ -36,7 +36,13 @@
     "afterPack": "./scripts/afterPack.js",
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.education",
       "hardenedRuntime": false,

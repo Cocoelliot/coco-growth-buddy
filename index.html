@@ -568,12 +568,16 @@ let pendingFileOps = [];
       const s = (payload || '').trim();
       if (!s) return '';
 
-      if (/<!doctype\s+html/i.test(s) || /<html[\s>]/i.test(s)) {
-        return injectVisualStrongFixIntoHtmlDoc(injectVisualResponsiveCss(s));
+      // Strip <script> and event handlers to prevent renderer freeze
+      const safe = s.replace(/<script[\s\S]*?<\/script>/gi, '<!-- script removed -->')
+                    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
+
+      if (/<!doctype\s+html/i.test(safe) || /<html[\s>]/i.test(safe)) {
+        return injectVisualStrongFixIntoHtmlDoc(injectVisualResponsiveCss(safe));
       }
 
-      if (/<[a-z][\s\S]*>/i.test(s)) {
-        const wrapped = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${s}</body></html>`;
+      if (/<[a-z][\s\S]*>/i.test(safe)) {
+        const wrapped = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${safe}</body></html>`;
         return injectVisualStrongFixIntoHtmlDoc(injectVisualResponsiveCss(wrapped));
       }
 
@@ -1340,7 +1344,7 @@ function pad2(n) {
         textContent = extracted.textOnly;
 
         if (extracted.hasVisual) {
-          setVisualContent(extracted.visualHTML, isReplay);
+          if (!isReplay) setVisualContent(extracted.visualHTML, isReplay);
           visualBadgeHTML = '<div class="visual-badge">🎨 已更新可视化面板 →</div>';
         }
       }

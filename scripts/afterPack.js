@@ -1,7 +1,8 @@
-// afterPack hook — clean extended attributes before signing
+// afterPack hook — clean extended attributes before signing (macOS only)
 const { execSync } = require('child_process');
 
 module.exports = async function (context) {
+  if (process.platform !== 'darwin') return;
   const appOutDir = context.appOutDir;
   console.log(`  • cleaning xattrs from ${appOutDir}`);
   try {
