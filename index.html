@@ -31,7 +31,7 @@
       --leftWidth: 280px;
       --rightWidth: 320px;
       --resizer: 4px;
-      --titleBarHeight: 38px;
+      --titleBarHeight: 34px;
       --chatInputMinH: 110px;
       --chatInputMaxH: 232px;
     }
@@ -219,7 +219,15 @@
   </style>
 </head>
 <body>
-  <div id="title-bar"><button id="settingsBtn" title="设置" onclick="openSettingsDialog()" style="background:transparent;border:none;color:#9ca3af;font-size:16px;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1;-webkit-app-region:no-drag;" onmouseenter="this.style.color='#6b7280';this.style.background='#f3f4f6'" onmouseleave="this.style.color='#9ca3af';this.style.background='transparent'">⋯</button></div>
+  <div id="title-bar">
+    <span style="flex:1;-webkit-app-region:drag;"></span>
+    <button id="settingsBtn" title="设置" onclick="openSettingsDialog()" style="background:transparent;border:none;color:#9ca3af;font-size:15px;cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1;-webkit-app-region:no-drag;" onmouseenter="this.style.color='#6b7280';this.style.background='#f3f4f6'" onmouseleave="this.style.color='#9ca3af';this.style.background='transparent'">⋯</button>
+    <span id="win-controls" style="display:none;gap:0;-webkit-app-region:no-drag;">
+      <button onclick="window.api.winMinimize()" title="最小化" style="background:transparent;border:none;color:#9ca3af;width:34px;height:28px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:0;" onmouseenter="this.style.background='#e5e7eb';this.style.color='#374151'" onmouseleave="this.style.background='transparent';this.style.color='#9ca3af'"><svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg></button>
+      <button onclick="window.api.winMaximize()" title="最大化" style="background:transparent;border:none;color:#9ca3af;width:34px;height:28px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:0;" onmouseenter="this.style.background='#e5e7eb';this.style.color='#374151'" onmouseleave="this.style.background='transparent';this.style.color='#9ca3af'"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>
+      <button onclick="window.api.winClose()" title="关闭" style="background:transparent;border:none;color:#9ca3af;width:34px;height:28px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:0;" onmouseenter="this.style.background='#ef4444';this.style.color='#fff'" onmouseleave="this.style.background='transparent';this.style.color='#9ca3af'"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1"/></svg></button>
+    </span>
+  </div>
   <aside id="left-panel">
     <div id="sidebar-header"><div class="sidebar-title"><span class="bear">🐻</span><span>Coco Growth Buddy</span></div></div>
     <div class="gb-card"><div class="gb-card-title">正在探索</div><div class="gb-card-content" id="current-topic">准备开始</div></div>
@@ -779,6 +787,11 @@ let pendingFileOps = [];
       try {
         var { ipcRenderer } = require('electron');
         ipcRenderer.on('menu:open-settings', function() { openSettingsDialog(); });
+        // Show window controls on Windows
+        var winControls = document.getElementById('win-controls');
+        if (winControls && process.platform === 'win32') {
+          winControls.style.display = 'flex';
+        }
       } catch(e) {}
 
       initResizers();
@@ -902,7 +915,7 @@ let pendingFileOps = [];
       var cleaned = text;
 
       // ─── 1) <ltm-save>{...}</ltm-save> ───────────────────────
-      var ltmSaveRe = /<ltm-save>([\s\S]*?)<\/ltm-save>/g;
+      var ltmSaveRe = /<ltm-save\s*>([\s\S]*?)<\/ltm-save>/gi;
       var ltmSaves = [];
       cleaned = cleaned.replace(ltmSaveRe, function(_, jsonStr) {
         ltmSaves.push(jsonStr.trim());
@@ -919,6 +932,22 @@ let pendingFileOps = [];
         } catch (e) {
           console.warn('[ltm-save] 解析失败:', e, ltmSaves[si].substring(0, 200));
         }
+      }
+
+      // Fallback: detect raw JSON LTM records (no wrapper tags)
+      var rawJsonRe = /\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g;
+      var rawMatch;
+      while ((rawMatch = rawJsonRe.exec(cleaned)) !== null) {
+        try {
+          var candidate = JSON.parse(rawMatch[0]);
+          if (candidate.owner_user_id && candidate.type && candidate.logical_key && candidate.content) {
+            if (window.api) {
+              await window.api.ltmSave(candidate);
+              console.log('[ltm-save] ✓ (raw fallback)', candidate.logical_key || candidate.title);
+              cleaned = cleaned.replace(rawMatch[0], '');
+            }
+          }
+        } catch (_) { /* not valid JSON, continue */ }
       }
 
       // ─── 2) <sidebar-update>{...}</sidebar-update> ───────────
@@ -1416,9 +1445,12 @@ function pad2(n) {
       return data.choices?.[0]?.message?.content || '';
     }
 
+    var _isSending = false;
     async function sendMessage() {
+      if (_isSending) return;
       var text = userInput.value.trim();
       if (!text && !attachedImage) return;
+      _isSending = true;
 
       // Image handling: call vision model first
       if (attachedImage) {
@@ -1543,8 +1575,8 @@ function pad2(n) {
                   ts = '[context: ' + mm + '/' + dd + ' ' + hh + ':' + mi + ']\n';
                 }
                 return { role: m.role, content: ts + m.content };
-              }),
-              { role: 'user', content: text }
+              })
+              // Note: current user message is already in ctx.messages (chatAdd saved it above)
             ];
           } else {
             msgs = [
@@ -1589,6 +1621,8 @@ function pad2(n) {
         var loadingEl3 = document.getElementById(loading.id);
         if (loadingEl3) loadingEl3.remove();
         appendMessage('buddy', '请求失败: ' + (err.message || '网络错误'));
+      } finally {
+        _isSending = false;
       }
     }
 

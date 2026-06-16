@@ -20,4 +20,7 @@ window.api = {
   initSaveConfig: (config) => ipcRenderer.invoke('init:save-config', config),
   getDataRoot: () => ipcRenderer.invoke('app:get-data-root'),
   configWriteFile: () => ipcRenderer.invoke('config:write-file'),
+  winMinimize: () => ipcRenderer.invoke('win:minimize'),
+  winMaximize: () => ipcRenderer.invoke('win:maximize'),
+  winClose: () => ipcRenderer.invoke('win:close'),
 };

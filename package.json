@@ -39,8 +39,7 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ],
@@ -58,7 +57,10 @@
     },
     "win": {
       "target": [
-        "portable"
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
       ],
       "artifactName": "${productName}-${version}-win-${arch}.${ext}"
     }

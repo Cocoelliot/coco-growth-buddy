@@ -93,12 +93,13 @@ function getChatLogRelPath(userId, ts) {
 }
 
 function createWindow() {
+  const isWin32 = process.platform === 'win32';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     title: 'Coco Desktop',
     backgroundColor: '#24283b',
-    titleBarStyle: 'hiddenInset',
+    ...(isWin32 ? { frame: false } : { titleBarStyle: 'hiddenInset' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
 
@@ -349,6 +350,11 @@ ipcMain.handle('coco:ping', async () => {
 ipcMain.handle('app:get-data-root', async () => {
   return { dataRoot: DATA_ROOT };
 });
+
+// --- Window controls (for frameless Windows) ---
+ipcMain.handle('win:minimize', () => { if (mainWindow) mainWindow.minimize(); });
+ipcMain.handle('win:maximize', () => { if (mainWindow) mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize(); });
+ipcMain.handle('win:close', () => { if (mainWindow) mainWindow.close(); });
 
 // --- Initial config save (for first-run setup via dmg) ---
 ipcMain.handle('init:save-config', async (_evt, config) => {
