@@ -309,9 +309,10 @@ async function scanUser(ownerUserId) {
 ${contextMessages}` }
   ];
 
-  const MAX_TOOL_ROUNDS = 5;
+  const MAX_TOOL_ROUNDS = 8;
   try {
     let llmContent = null;
+    let prevToolCalls = new Set(); // track duplicate calls
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const payload = {
         model: MODEL,
@@ -353,7 +354,14 @@ ${contextMessages}` }
       }
 
       // Execute tool calls and continue
+      var toolSig = msg.tool_calls.map(tc => tc.function.name + ':' + tc.function.arguments).join(',');
       console.log(`[${ownerUserId}] Tool calls in round ${round + 1}: ${msg.tool_calls.map(tc => tc.function.name + '(' + tc.function.arguments + ')').join(', ')}`);
+      if (prevToolCalls.has(toolSig)) {
+        console.warn(`[${ownerUserId}] Duplicate tool calls detected in round ${round + 1}, stopping loop`);
+        llmContent = msg.content || '';
+        break;
+      }
+      prevToolCalls.add(toolSig);
       messages.push({ role: 'assistant', content: msg.content || '', tool_calls: msg.tool_calls });
       for (const tc of msg.tool_calls) {
         const result = executeScannerTool(tc, ownerUserId);
