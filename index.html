@@ -72,6 +72,9 @@
     .badge.pink { background: var(--brand-accent); }
     .badge.gold { background: #f59e0b; }
     .badge.green { background: var(--brand-secondary); }
+    /* 「显示全部 / 收起」单独占一整行，避免被当成徽章挤进 flex 流里 */
+    .badges-more { flex-basis: 100%; margin-top: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; user-select: none; }
+    .badges-more:hover { color: var(--brand-primary); text-decoration: underline; }
     .hint-card { background: linear-gradient(135deg, #fffbf5, #fdf9f3); border-left: 3px solid var(--brand-primary); border-radius: 10px; padding: 12px; border: 1px solid var(--border-warm); }
     .hint-title { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
     .hint-content { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
@@ -455,6 +458,10 @@ let ltmRetrieveCache = [];
 let pendingFileOps = [];
     let visualHistory = [];
     let visualIndex = -1;
+    // 右侧面板保留最近几个 visual。启动时按同名规则从磁盘恢复，默认停在最
+    // 新的那个，「上一个」往前翻可看到前面 MAX_VISUAL_HISTORY-1 个。
+    // 只影响面板里挂几个，磁盘上的历史文件一个都不删。
+    var MAX_VISUAL_HISTORY = 4;
 
     const chatMessages = document.getElementById('chat-messages');
     const userInput = document.getElementById('userInput');
@@ -603,21 +610,25 @@ let pendingFileOps = [];
      */
     function setVisualContent(html, skipSave) {
       if (!html) return;
+      renderVisualItem({ srcdoc: buildVisualSrcdoc(html), filename: null }, skipSave);
+    }
 
-      const srcdoc = buildVisualSrcdoc(html);
-      currentVisualHTML = srcdoc;
+    /** 把一个 visual 装进 iframe 并同步导航状态。
+     *  setVisualContent（新建）/ navigateVisual（翻页）/ restoreRecentVisuals（启动恢复）共用这一条路径。 */
+    function renderVisualItem(item, skipSave) {
+      currentVisualHTML = item.srcdoc;
 
       const iframe = document.getElementById('visual-iframe');
       const placeholder = document.getElementById('visual-placeholder');
       const dot = document.getElementById('visual-dot');
 
-      iframe.srcdoc = srcdoc;
+      iframe.srcdoc = item.srcdoc;
       iframe.style.display = 'block';
       placeholder.style.display = 'none';
       dot.classList.add('active');
 
       if (!skipSave) {
-        autoSaveVisual(srcdoc);
+        autoSaveVisual(item.srcdoc);   // 内部会 push 并自行设置 visualIndex
       }
       updateVisualNav();
 
@@ -634,6 +645,14 @@ let pendingFileOps = [];
           }
         } catch (e) {}
       };
+    }
+
+    /** 入队一个 visual：超出上限就从队首挤掉最老的。
+     *  只挤出面板，**磁盘文件一个都不删**（那是完整归档，193 个也才 1.2MB）。 */
+    function pushVisual(item) {
+      visualHistory.push(item);
+      while (visualHistory.length > MAX_VISUAL_HISTORY) visualHistory.shift();
+      visualIndex = visualHistory.length - 1;
     }
 
     function autoSaveVisual(srcdoc) {
@@ -656,8 +675,7 @@ let pendingFileOps = [];
               var existing = fs.readFileSync(fp, 'utf8');
               if (existing === srcdoc) {
                 // 内容相同，跳过存盘，同步到内存 history
-                visualHistory.push({ srcdoc: srcdoc, filename: files[fi] });
-                visualIndex = visualHistory.length - 1;
+                pushVisual({ srcdoc: srcdoc, filename: files[fi] });
                 return files[fi];
               }
             }
@@ -672,12 +690,19 @@ let pendingFileOps = [];
 
         var d = new Date();
         var ts = d.getFullYear() + pad2(d.getMonth()+1) + pad2(d.getDate()) + '-' + pad2(d.getHours()) + pad2(d.getMinutes());
-        var filename = 'visual-' + ts + '.html';
+        // 文件名只精确到分钟，同一分钟内连续生成会撞名 → 后一个静默覆盖前一个。
+        // 恢复功能上线后这等于直接丢一条历史，所以撞名就加序号。
+        var base = 'visual-' + ts;
+        var filename = base + '.html';
+        var seq = 1;
+        while (fs.existsSync(path.join(absDir, filename))) {
+          seq++;
+          filename = base + '-' + seq + '.html';
+        }
         fs.writeFileSync(path.join(absDir, filename), srcdoc, 'utf8');
 
         // 同步到内存 history
-        visualHistory.push({ srcdoc: srcdoc, filename: filename });
-        visualIndex = visualHistory.length - 1;
+        pushVisual({ srcdoc: srcdoc, filename: filename });
 
         return filename;
       } catch (e) {
@@ -691,15 +716,7 @@ let pendingFileOps = [];
       if (newIndex < 0 || newIndex >= visualHistory.length) return;
 
       visualIndex = newIndex;
-      var item = visualHistory[visualIndex];
-      currentVisualHTML = item.srcdoc;
-
-      var iframe = document.getElementById('visual-iframe');
-      iframe.srcdoc = item.srcdoc;
-      iframe.style.display = 'block';
-      document.getElementById('visual-placeholder').style.display = 'none';
-      document.getElementById('visual-dot').classList.add('active');
-      updateVisualNav();
+      renderVisualItem(visualHistory[visualIndex], true);
     }
 
     function updateVisualNav() {
@@ -707,6 +724,53 @@ let pendingFileOps = [];
       var nextBtn = document.getElementById('visual-next');
       if (prevBtn) prevBtn.disabled = visualIndex <= 0;
       if (nextBtn) nextBtn.disabled = visualIndex < 0 || visualIndex >= visualHistory.length - 1;
+    }
+
+    /** 启动时把磁盘上最近的 MAX_VISUAL_HISTORY 个 visual 读回内存，默认停在最新的那个。
+     *  文件一直都在 users/{user}/visuals/ 下，之前只是没人把它们读回来，
+     *  所以重启/刷新后面板是空的 —— 不是没存，是没恢复。 */
+    function restoreRecentVisuals() {
+      try {
+        var absDir = getVisualsDir();
+        if (!fs.existsSync(absDir)) return;
+
+        // 文件名 visual-YYYYMMDD-HHMM(-N).html：先按时间戳排，同分钟再按序号排。
+        // 不能直接用字典序 —— '...-1051-2.html' 里 '-'(45) < '.'(46)，纯字典序会把序号版排到前面，
+        // 导致同分钟内的先后颠倒。
+        var files = fs.readdirSync(absDir)
+          .map(function(f) {
+            var m = f.match(/^visual-(\d{8})-(\d{4})(?:-(\d+))?\.html$/);
+            if (!m) return null;
+            return { f: f, key: m[1] + m[2], seq: parseInt(m[3] || '0', 10) };
+          })
+          .filter(Boolean)
+          .sort(function(a, b) {
+            if (a.key !== b.key) return a.key < b.key ? -1 : 1;
+            return a.seq - b.seq;
+          })
+          .map(function(x) { return x.f; })
+          .slice(-MAX_VISUAL_HISTORY);
+
+        visualHistory = [];
+        for (var i = 0; i < files.length; i++) {
+          visualHistory.push({
+            srcdoc: fs.readFileSync(path.join(absDir, files[i]), 'utf8'),
+            filename: files[i],
+          });
+        }
+
+        if (visualHistory.length === 0) {
+          visualIndex = -1;
+          updateVisualNav();
+          return;
+        }
+
+        // 停在最新的那个；点「上一个」往前翻，正好是前面 MAX_VISUAL_HISTORY-1 个
+        visualIndex = visualHistory.length - 1;
+        renderVisualItem(visualHistory[visualIndex], true);
+      } catch (e) {
+        console.warn('Restore recent visuals failed:', e);
+      }
     }
 
     function clearVisual() {
@@ -753,6 +817,30 @@ let pendingFileOps = [];
       };
     }
 
+    // 成就徽章滚动窗口：只展示最近 MAX_VISIBLE_BADGES 枚，更早的自动"退休"。
+    // 退休 = 不渲染，JSON 里的完整记录一条都不删，随时可点「显示全部」回看。
+    var MAX_VISIBLE_BADGES = 60;
+    var _badgesExpanded = false;
+
+    /** 按 earned_at 升序稳定排序：同日获得的多枚保持原有先后顺序；缺日期的排最前 */
+    function sortBadgesByDate(badges) {
+      return (badges || [])
+        .map(function(b, i) { return { b: b, i: i }; })
+        .sort(function(x, y) {
+          var dx = x.b.earned_at || '', dy = y.b.earned_at || '';
+          if (dx < dy) return -1;
+          if (dx > dy) return 1;
+          return x.i - y.i;
+        })
+        .map(function(x) { return x.b; });
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
     function updateSidebarUI(state) {
       var d = state || getDefaultSidebar();
 
@@ -770,10 +858,40 @@ let pendingFileOps = [];
 
       var badgeEl = document.getElementById('badges-container');
       if (badgeEl) {
-        var badges = d.badges || [];
-        badgeEl.innerHTML = badges.length === 0
+        var all = sortBadgesByDate(d.badges || []);
+
+        // 配色下标取自【完整列表】而非切片后的列表：
+        // 否则每退休一枚 / 新增一枚，后面所有徽章的颜色都会整体错位一格。
+        var colorOf = {};
+        all.forEach(function(x, i) { colorOf[x.id] = ['pink', 'gold', 'green'][i % 3]; });
+
+        var expanded = _badgesExpanded || all.length <= MAX_VISIBLE_BADGES;
+        var shown = expanded ? all : all.slice(-MAX_VISIBLE_BADGES);
+        var retired = all.length - shown.length;
+
+        var html = all.length === 0
           ? '<span style="font-size:11px;color:var(--text-muted);">还没有获得徽章，继续加油！</span>'
-          : badges.map(function(x, i) { return '<span class="badge ' + ['pink', 'gold', 'green'][i % 3] + '" title="' + x.label + '">' + x.emoji + ' ' + x.label + '</span>'; }).join('');
+          : shown.map(function(x) {
+              return '<span class="badge ' + colorOf[x.id] + '" title="' + escapeHtml(x.label) + '">' +
+                     escapeHtml(x.emoji) + ' ' + escapeHtml(x.label) + '</span>';
+            }).join('');
+
+        if (all.length > MAX_VISIBLE_BADGES) {
+          html += '<div class="badges-more" id="badges-more">' +
+            (expanded
+              ? '收起（只显示最近 ' + MAX_VISIBLE_BADGES + ' 枚）'
+              : '还有 ' + retired + ' 枚早期徽章已退休 · 显示全部') +
+            '</div>';
+        }
+        badgeEl.innerHTML = html;
+
+        var moreEl = document.getElementById('badges-more');
+        if (moreEl) {
+          moreEl.onclick = function() {
+            _badgesExpanded = !_badgesExpanded;
+            updateSidebarUI(state);
+          };
+        }
       }
 
       var stickingEl = document.getElementById('sticking-point');
@@ -831,6 +949,8 @@ let pendingFileOps = [];
         loadSystemPrompt();
         loadLtmPreload();
         loadChatHistory();
+        // 必须在 initConfig 之后：getVisualsDir() 依赖 USER_NAME_LOWER
+        restoreRecentVisuals();
 
         if (!_gbApiKey || !fs.existsSync(path.join(_gbDataRoot, 'config.json'))) {
           setTimeout(function() { showSetupDialog(); }, 800);
@@ -843,6 +963,8 @@ let pendingFileOps = [];
         loadSystemPrompt();
         loadLtmPreload();
         loadChatHistory();
+        // 必须在 initConfig 之后：getVisualsDir() 依赖 USER_NAME_LOWER
+        restoreRecentVisuals();
       });
     });
 

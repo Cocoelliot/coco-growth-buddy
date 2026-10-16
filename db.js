@@ -198,28 +198,60 @@ class AppDB {
   // LTM
   // ==================================================================
 
-  /** 保存一条 LTM 记录（append-only 版本化） */
+  /** 保存一条 LTM 记录（append-only 版本化）
+   *
+   * 版本管理由【代码】保证：若新版本 status 为 active，自动把同一 owner + 同一 logical_key
+   * 的其它 active 版本归档为 parked —— 因此同一 key 恒定只有一条 active。
+   * 不再依赖 LLM 输出 parked 旧版（实测它经常漏，历史上一度堆积 65 条该归档却仍 active 的记录）。
+   *
+   * 归档条件经过严格限定，避免误伤：
+   *   - 同 owner_user_id   → 绝不跨用户
+   *   - 同 logical_key     → 绝不碰其它 key
+   *   - id != 新插入的 id  → 绝不归档自己
+   *   - status = 'active'  → 只归档当前 active 的，不重复处理已归档记录
+   *   - 仅当新版本自身 status 为 active 时才归档（新版本本身就是 parked 时，不动其它记录）
+   * 整个 INSERT + UPDATE 在事务内完成，保证原子性。
+   */
   ltmSave(record) {
-    const stmt = this.db.prepare(`
+    const insert = this.db.prepare(`
       INSERT INTO ltm_records 
         (owner_user_id, type, logical_key, title, tags, description, content, status, 
          origin_prompt, background, source_round)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const info = stmt.run(
-      record.owner_user_id || 'default',
-      record.type,
-      record.logical_key,
-      record.title || '',
-      record.tags || '',
-      record.description || '',
-      record.content || '',
-      record.status || 'active',
-      record.origin_prompt || '',
-      record.background || '',
-      record.source_round || null
-    );
-    return { id: info.lastInsertRowid };
+    const archiveOthers = this.db.prepare(`
+      UPDATE ltm_records
+         SET status = 'parked', updated_at = datetime('now','localtime')
+       WHERE owner_user_id = ?
+         AND logical_key   = ?
+         AND id != ?
+         AND status = 'active'
+    `);
+
+    const run = this.db.transaction((rec) => {
+      const ownerId = rec.owner_user_id || 'default';
+      const status = String(rec.status || 'active').toLowerCase();
+      const info = insert.run(
+        ownerId,
+        rec.type,
+        rec.logical_key,
+        rec.title || '',
+        rec.tags || '',
+        rec.description || '',
+        rec.content || '',
+        status,
+        rec.origin_prompt || '',
+        rec.background || '',
+        rec.source_round || null
+      );
+      let archived = 0;
+      if (status === 'active') {
+        archived = archiveOthers.run(ownerId, rec.logical_key, info.lastInsertRowid).changes;
+      }
+      return { id: info.lastInsertRowid, archived };
+    });
+
+    return run(record);
   }
 
   /** 搜索 LTM（积分制 + 动态上限）

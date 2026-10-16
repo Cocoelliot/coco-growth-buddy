@@ -5,10 +5,15 @@ package-lock.json
 
 # 运行时自动生成的数据目录
 data/
+data.bak.*/
 users/
 workspace/
+quick_notes/
+visuals/
 config.json
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
